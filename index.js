@@ -31,32 +31,16 @@ app.post("/notes", authMiddleware, async (req, res, next) => {
     }
 });
 
-
 app.get('/notes', authMiddleware, async (req, res, next) => {
     try {
         const page = parseInt(req.query.page) || 2;
-        const limit = parseInt(req.query.limit) || 5;
-        const skip = (page - 1) * limit;
-
-        const notes = await Note.find({ userId: req.userId }).skip(skip).limit(limit);
-        res.json({ page, limit, count: notes.length, notes });
-
-    } catch (err) {
-        next(err);
-    }
-});
-
-
-app.get('/notes', authMiddleware, async (req, res, next) => {
-    try {
-        const page = parseInt(req.query.page) || 2;
-        const limit = parseFloat(req, query.limit) || 5;
+        const limit = parseFloat(req.query.limit) || 5;
         const skip = (page - 1) * limit;
 
         const search = req.query.search || "";
 
         const notes = await Note.find({
-            userId: userId,
+            userId: req.userId,
             title: { $regex: search, $options: "i" } //for case insensitive
         }).skip(skip).limit(limit);
         res.json({ page, limit, count: notes.length, notes });
@@ -70,8 +54,8 @@ app.get('/notes', authMiddleware, async (req, res, next) => {
 app.put("/notes/:id", authMiddleware, async (req, res, next) => {
     try {
         const note = await Note.findOneAndUpdate(
-            { _id: req.params.id, userId: req.userId }, // ✅ must match both note id + user
-            { title: req.body.title, content: req.body.content },
+            { _id: req.params.id, userId: req.userId },
+            { title: req.body.title || undefined, content: req.body.content || undefined },
             { new: true }
         );
 
@@ -100,7 +84,7 @@ app.delete("/notes/:id", authMiddleware, async (req, res, next) => {
 
 //User Routing
 
-app.post('signup', async (req, res, next) => {
+app.post('/signup', async (req, res, next) => {
     try {
         const { username, email, password } = req.body;
         //Hash Password
@@ -109,14 +93,14 @@ app.post('signup', async (req, res, next) => {
         const user = new User({ username, email, password: hashedPassword });
         await user.save();
 
-        res.json(201).json({ message: 'User Created Successfully' });
+        res.status(201).json({ message: 'User Created Successfully' });
 
     } catch (err) {
         next(err);
     }
 });
 
-app.get('/signin', async (req, res, next) => {
+app.post('/signin', async (req, res, next) => {
     try {
         const { email, password } = req.body;
         const user = await User.findOne({ email });
@@ -138,13 +122,14 @@ app.get('/signin', async (req, res, next) => {
 
 function authMiddleware(req, res, next) {
     try {
-        const authHeader = req.headers['Authorization'];
+        const authHeader = req.headers['authorization'];
         if (!authHeader) return res.status(401).json({ error: 'No token provided' });
 
         const token = authHeader.split(" ")[1]; //Bearer <token>
         jwt.verify(token, SECRET_KEY, (err, decoded) => {
             if (err) return res.status(403).json({ error: "Invalid Token" });
             req.userId = decoded.id;
+            next();
         });
     } catch (err) {
         next(err);
