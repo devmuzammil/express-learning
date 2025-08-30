@@ -14,57 +14,65 @@ app.get('/', (req, res) => {
     res.send('Welcome to Al-Hadi Notes');
 });
 
-app.post('/note', async (req, res, next) => {
-    try {
-        const note = new Note(req.body);
-        await note.save();
-        res.status(201).json(note);
-    } catch (err) {
-        next(err);
-    }
+app.post("/notes", authMiddleware, async (req, res, next) => {
+  try {
+    const { title, content } = req.body;
+
+    const note = new Note({
+      title,
+      content,
+      userId: req.userId 
+    });
+
+    await note.save();
+    res.status(201).json(note);
+  } catch (err) {
+    next(err);
+  }
 });
 
-app.get('/notes', async (req, res, next) => {
-    try {
-        const notes = await Note.find();
-        res.json(notes);
-    } catch (err) {
-        next(err);
-    }
-})
 
-app.get('/notes/:id', async (req, res, next) => {
-    try {
-        const note = await Note.findById(req.params.id);
-        if (!note) return res.status(404).json({ error: 'Note not found' });
-        res.json(note);
-    } catch (err) {
-        next(err);
-    }
+app.get("/notes", authMiddleware, async (req, res, next) => {
+  try {
+    const notes = await Note.find({ userId: req.userId });
+    res.json(notes);
+  } catch (err) {
+    next(err);
+  }
 });
 
-app.put('/notes/:id', async (req, res, next) => {
-    try {
-        const note = await Note.findByIdAndUpdate(
-            req.params.id,
-            req.body, {
-            new: true,
-            runValidators: true
-        })
-    } catch (err) {
-        next(err);
-    }
-})
 
-app.delete('/notes/:id', async (req, res, next) => {
-    try {
-        const note = await Note.findByIdAndDelete(req.params.id);
-        if (!note) return res.status(404).json({ error: 'Note not Found' });
-        res.json(note);
-    } catch (err) {
-        next(err);
-    }
+// Update
+app.put("/notes/:id", authMiddleware, async (req, res, next) => {
+  try {
+    const note = await Note.findOneAndUpdate(
+      { _id: req.params.id, userId: req.userId }, // ✅ must match both note id + user
+      { title: req.body.title, content: req.body.content },
+      { new: true }
+    );
+
+    if (!note) return res.status(404).json({ error: "Note not found" });
+    res.json(note);
+  } catch (err) {
+    next(err);
+  }
 });
+
+// Delete
+app.delete("/notes/:id", authMiddleware, async (req, res, next) => {
+  try {
+    const note = await Note.findOneAndDelete({
+      _id: req.params.id,
+      userId: req.userId
+    });
+
+    if (!note) return res.status(404).json({ error: "Note not found" });
+    res.json({ message: "Note deleted successfully" });
+  } catch (err) {
+    next(err);
+  }
+});
+
 
 //User Routing
 
@@ -113,7 +121,7 @@ function authMiddleware(req, res, next) {
         jwt.verify(token, SECRET_KEY, (err, decoded) => {
             if (err) return res.status(403).json({ error: "Invalid Token" });
             req.userId = decoded.id;
-        })
+        });
     } catch (err) {
         next(err);
     }
