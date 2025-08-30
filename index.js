@@ -15,62 +15,86 @@ app.get('/', (req, res) => {
 });
 
 app.post("/notes", authMiddleware, async (req, res, next) => {
-  try {
-    const { title, content } = req.body;
+    try {
+        const { title, content } = req.body;
 
-    const note = new Note({
-      title,
-      content,
-      userId: req.userId 
-    });
+        const note = new Note({
+            title,
+            content,
+            userId: req.userId
+        });
 
-    await note.save();
-    res.status(201).json(note);
-  } catch (err) {
-    next(err);
-  }
+        await note.save();
+        res.status(201).json(note);
+    } catch (err) {
+        next(err);
+    }
 });
 
 
-app.get("/notes", authMiddleware, async (req, res, next) => {
-  try {
-    const notes = await Note.find({ userId: req.userId });
-    res.json(notes);
-  } catch (err) {
-    next(err);
-  }
+app.get('/notes', authMiddleware, async (req, res, next) => {
+    try {
+        const page = parseInt(req.query.page) || 2;
+        const limit = parseInt(req.query.limit) || 5;
+        const skip = (page - 1) * limit;
+
+        const notes = await Note.find({ userId: req.userId }).skip(skip).limit(limit);
+        res.json({ page, limit, count: notes.length, notes });
+
+    } catch (err) {
+        next(err);
+    }
+});
+
+
+app.get('/notes', authMiddleware, async (req, res, next) => {
+    try {
+        const page = parseInt(req.query.page) || 2;
+        const limit = parseFloat(req, query.limit) || 5;
+        const skip = (page - 1) * limit;
+
+        const search = req.query.search || "";
+
+        const notes = await Note.find({
+            userId: userId,
+            title: { $regex: search, $options: "i" } //for case insensitive
+        }).skip(skip).limit(limit);
+        res.json({ page, limit, count: notes.length, notes });
+    } catch (err) {
+        next(err);
+    }
 });
 
 
 // Update
 app.put("/notes/:id", authMiddleware, async (req, res, next) => {
-  try {
-    const note = await Note.findOneAndUpdate(
-      { _id: req.params.id, userId: req.userId }, // ✅ must match both note id + user
-      { title: req.body.title, content: req.body.content },
-      { new: true }
-    );
+    try {
+        const note = await Note.findOneAndUpdate(
+            { _id: req.params.id, userId: req.userId }, // ✅ must match both note id + user
+            { title: req.body.title, content: req.body.content },
+            { new: true }
+        );
 
-    if (!note) return res.status(404).json({ error: "Note not found" });
-    res.json(note);
-  } catch (err) {
-    next(err);
-  }
+        if (!note) return res.status(404).json({ error: "Note not found" });
+        res.json(note);
+    } catch (err) {
+        next(err);
+    }
 });
 
 // Delete
 app.delete("/notes/:id", authMiddleware, async (req, res, next) => {
-  try {
-    const note = await Note.findOneAndDelete({
-      _id: req.params.id,
-      userId: req.userId
-    });
+    try {
+        const note = await Note.findOneAndDelete({
+            _id: req.params.id,
+            userId: req.userId
+        });
 
-    if (!note) return res.status(404).json({ error: "Note not found" });
-    res.json({ message: "Note deleted successfully" });
-  } catch (err) {
-    next(err);
-  }
+        if (!note) return res.status(404).json({ error: "Note not found" });
+        res.json({ message: "Note deleted successfully" });
+    } catch (err) {
+        next(err);
+    }
 });
 
 
