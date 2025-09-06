@@ -6,6 +6,9 @@ const Note = require('./db');
 const User = require('./db');
 const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
+const { z, file } = require('zod');
+const multer = require('multer');
+const path = require('path');
 const SECRET_KEY = process.env.SECRET_KEY;
 const port = process.env.PORT || 3000;
 
@@ -84,6 +87,21 @@ app.delete("/notes/:id", authMiddleware, async (req, res, next) => {
 
 //User Routing
 
+const signupScehma = z.object({
+    username: z.object().min(3, 'Username must be atleast 3 characters'),
+    email: z.object().email('Invalid email format'),
+    password: z.object().min(8, 'Password Should be of 8 Characters')
+});
+
+function validateScehama(req, res, next) {
+    try {
+        req.body = signupScehma.parse(req.body);
+        next();
+    } catch (err) {
+        next(err);
+    }
+}
+
 app.post('/signup', async (req, res, next) => {
     try {
         const { username, email, password } = req.body;
@@ -118,8 +136,6 @@ app.post('/signin', async (req, res, next) => {
         next();
     }
 });
-
-
 function authMiddleware(req, res, next) {
     try {
         const authHeader = req.headers['authorization'];
