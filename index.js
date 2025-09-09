@@ -9,8 +9,19 @@ const jwt = require('jsonwebtoken');
 const { z, file } = require('zod');
 const multer = require('multer');
 const path = require('path');
+const helmet = require('helmet');
+const rateLimit = require('express-rate-limit');
 const SECRET_KEY = process.env.SECRET_KEY;
 const port = process.env.PORT || 3000;
+
+app.use(helmet());
+const limiter = rateLimit({
+    windowMs: 15 * 60 * 1000,
+    max: 100,
+    message: 'Too many request,try again later'
+});
+
+app.use(limiter);
 
 
 app.get('/', (req, res) => {
