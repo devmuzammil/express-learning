@@ -6,7 +6,10 @@ const notesSchema = new mongoose.Schema({
     title: { type: String, required: true },
     content: { type: String, required: true },
     userId: {
-        type: mongoose.Schema.Types.ObjectId, ref: User
+        type: mongoose.Schema.Types.ObjectId, ref: 'User'
+    },
+    sharedWith:{
+        type: mongoose.Schema.Types.ObjectId, ref: 'User'
     },
     createdAt: { type: Date, default: Date.now }
 });
@@ -26,9 +29,22 @@ const userSchema = new mongoose.Schema({
         type: String,
         required: true,
     },
+    role: {
+        type: String,
+        enum: ['user', 'admin'],
+        default: ['user']
+    }
 });
+
+const profileSchema = new mongoose.Schema({
+    userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', unique: true },
+    bio: String,
+    avatar: String
+});
+
 const Note = mongoose.model('Note', notesSchema);
 const User = mongoose.model('User', userSchema);
+const Profile = mongoose.model('Profile', profileSchema);
 
 module.exports = {
     Note,

@@ -23,6 +23,30 @@ const limiter = rateLimit({
 
 app.use(limiter);
 
+function requireRole(role) {
+    return (req, res, next) => {
+        try {
+            if (req.user.role !== role) {
+                return res.status(403).json({
+                    message: 'Forbidden: Insufficient Rights'
+                });
+            }
+        } catch {
+            next(err);
+        }
+    }
+}
+
+app.get('/admin/notes', authMiddleware, requireRole('admin', async (req, res, next) => {
+    try {
+        const notes = await User.find();
+        res.json(notes);
+    } catch (err) {
+        next(err);
+    }
+}
+));
+
 
 app.get('/', (req, res) => {
     res.send('Welcome to Al-Hadi Notes');
@@ -40,6 +64,26 @@ app.post("/notes", authMiddleware, async (req, res, next) => {
 
         await note.save();
         res.status(201).json(note);
+    } catch (err) {
+        next(err);
+    }
+});
+
+app.post('/notes/:id/share', authMiddleware, async (req, res, next) => {
+    try {
+        const { userIdToShare } = req.body;
+        const note = await Note.findById(req.params.id);
+        if (!note) return res.status(404).json({ message: 'Note not Found' });
+        if (note.userId.toString() !== req.user.userId) {
+            return res.status(403).json({
+                message: 'Not Authorized'
+            });
+        }
+
+        note.sharedWith.push(userIdToShare);
+        await note.save();
+        res.json({ message: 'Note Shared Successfully' });
+
     } catch (err) {
         next(err);
     }
@@ -138,7 +182,7 @@ app.post('/signin', async (req, res, next) => {
         const isMatch = await bcrypt.compare(password, user.password);
         if (!isMatch) return res.status(401).json({ error: 'Invalid Credentials' });
 
-        const token = jwt.sign({ id: user._id }, SECRET_KEY, { expiresIn: "3h" });
+        const token = jwt.sign({ id: user._id, role: user.role }, SECRET_KEY, { expiresIn: "3h" });
         console.log(token);
 
         res.json({ token });
@@ -154,8 +198,8 @@ function authMiddleware(req, res, next) {
 
         const token = authHeader.split(" ")[1]; //Bearer <token>
         jwt.verify(token, SECRET_KEY, (err, decoded) => {
-            if (err) return res.status(403).json({ error: "Invalid Token" });
-            req.userId = decoded.id;
+            if (err) return d.ires.status(403).json({ error: "Invalid Token" });
+            req.userId = decoded;
             next();
         });
     } catch (err) {
