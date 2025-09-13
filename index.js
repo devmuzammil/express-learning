@@ -89,6 +89,16 @@ app.post('/notes/:id/share', authMiddleware, async (req, res, next) => {
     }
 });
 
+
+app.get('/shared-notes', authMiddleware, async (req, res, next) => {
+    try {
+        const notes = await Note.find({sharedWith: req.user.userId});
+        res.json(notes)
+    } catch (err) {
+        next(err);
+    }
+})
+
 app.get('/notes', authMiddleware, async (req, res, next) => {
     try {
         const page = parseInt(req.query.page) || 2;
