@@ -12,7 +12,10 @@ const path = require('path');
 const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
 const http = require('http');
-const { Server } = require('socket.io'); // ✅ fixed import
+const { Server } = require('socket.io');
+const Redis = require('ioredis');
+const redis = new Redis();
+const emailQueue = require('./queues/emailQueue.js');
 
 const SECRET_KEY = process.env.SECRET_KEY;
 const port = process.env.PORT || 3000;
@@ -43,8 +46,8 @@ function authMiddleware(req, res, next) {
         const token = authHeader.split(" ")[1]; // Bearer <token>
         jwt.verify(token, SECRET_KEY, (err, decoded) => {
             if (err) return res.status(403).json({ error: "Invalid Token" });
-            req.user = decoded; // contains id + role
-            req.userId = decoded.id; // ✅ consistency fix
+            req.user = decoded;
+            req.userId = decoded.id;
             next();
         });
     } catch (err) {
@@ -83,7 +86,7 @@ const storage = multer.diskStorage({
     destination: (req, file, cb) => cb(null, 'uploads'),
     filename: (req, file, cb) => cb(null, Date.now() + path.extname(file.originalname))
 });
-const upload = multer({ storage }); // ✅ fixed missing line
+const upload = multer({ storage });
 
 // -------------------- Validation --------------------
 const signupSchema = z.object({
@@ -117,7 +120,7 @@ app.post("/notes", authMiddleware, upload.single('image'), async (req, res, next
         });
 
         await note.save();
-        io.emit('noteCreated', note); // socket emit
+        io.emit('noteCreated', note);
 
         res.status(201).json({
             note,
@@ -131,17 +134,28 @@ app.post("/notes", authMiddleware, upload.single('image'), async (req, res, next
 
 app.get('/notes', authMiddleware, async (req, res, next) => {
     try {
-        const page = parseInt(req.query.page) || 1; // ✅ fixed default
-        const limit = parseInt(req.query.limit, 10) || 5; // ✅ integer
+        const page = parseInt(req.query.page) || 1;
+        const limit = parseInt(req.query.limit, 10) || 5;
         const skip = (page - 1) * limit;
         const search = req.query.search || "";
+
+        const cacheKey = `notes: ${req.userId} : page : ${page}: Search: ${search}`;
+
+        const cachedNotes = await redis.get(cacheKey);
+        if (cacheKey) {
+            console.log('Serving from Redis');
+            return res.json(JSON.parse(cachedNotes));
+        }
 
         const notes = await Note.find({
             userId: req.userId,
             title: { $regex: search, $options: "i" }
         }).skip(skip).limit(limit);
 
-        res.json({ page, limit, count: notes.length, notes });
+        const response = { page, limit, count: notes.length, notes };
+
+        await redis.get(cacheKey, JSON.stringify(response), 'EX', 60);
+        res.json(response);
     } catch (err) {
         next(err);
     }
@@ -200,7 +214,7 @@ app.get('/shared-notes', authMiddleware, async (req, res, next) => {
 // Admin Routes
 app.get('/admin/notes', authMiddleware, requireRole('admin'), async (req, res, next) => {
     try {
-        const notes = await Note.find(); // ✅ fixed (was User.find)
+        const notes = await Note.find();
         res.json(notes);
     } catch (err) {
         next(err);
@@ -223,6 +237,10 @@ app.post('/signup', validateSchema, async (req, res, next) => { // ✅ apply sch
         const hashedPassword = await bcrypt.hash(password, 10);
         const user = new User({ username, email, password: hashedPassword });
         await user.save();
+
+        // add email job to queue
+        await emailQueue.add({ email, username });
+
         res.status(201).json({ message: 'User Created Successfully' });
     } catch (err) {
         next(err);
@@ -238,8 +256,46 @@ app.post('/signin', async (req, res, next) => {
         const isMatch = await bcrypt.compare(password, user.password);
         if (!isMatch) return res.status(401).json({ error: 'Invalid Credentials' });
 
-        const token = jwt.sign({ id: user._id, role: user.role }, SECRET_KEY, { expiresIn: "3h" });
-        res.json({ token });
+        const accessToken = jwt.sign({ id: user._id, role: user.role }, SECRET_KEY, { expiresIn: "15m" });
+        const refreshToken = jwt.sign({ id: user._id, role: user.role }, SECRET_KEY, { expiresIn: "7d" });
+        user.refreshToken = refreshToken;
+        await user.save();
+        res.json({ accessToken, refreshToken });
+    } catch (err) {
+        next(err);
+    }
+});
+
+app.post('/refresh', async (req, res, next) => {
+    try {
+        const { refreshToken } = req.body;
+        if (!refreshToken) return res.status(401).json({ error: 'No refresh Token' });
+
+        const user = await User.findOne({ refreshToken });
+        if (!user) return res.status(403).json({ error: 'Invalid Refresh Token' });
+
+        jwt.verify(refreshToken, SECRET_KEY, (err, decoded) => {
+            if (!err) return res.status(403).json({ error: 'Inavlid Token' });
+            const newAccessToken = jwt.sign(
+                { id: user._id, role: user.role }, SECRET_KEY, { expiresIn: '15m' }
+            );
+
+            res.json({ accessToken: newAccessToken });
+        });
+    } catch (err) {
+        next(err);
+    }
+
+});
+
+app.post('/logout', authMiddleware, async (req, res, next) => {
+    try {
+        const user = await User.findById(req.userId);
+        if (!user) return res.status(404).json({ error: 'User Not Found' });
+
+        user.refreshToken = null;
+        await user.save();
+        res.json({ message: 'Logged Out Successfully' });
     } catch (err) {
         next(err);
     }
