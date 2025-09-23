@@ -231,7 +231,7 @@ app.get('/admin/users', authMiddleware, checkAdmin, async (req, res, next) => {
 });
 
 // Auth
-app.post('/signup', validateSchema, async (req, res, next) => { // ✅ apply schema
+app.post('/signup', validateSchema, async (req, res, next) => { 
     try {
         const { username, email, password } = req.body;
         const hashedPassword = await bcrypt.hash(password, 10);
